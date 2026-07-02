@@ -1,0 +1,80 @@
+# If you need source for mod development then contact me in discord (_izacarlos), otherwise API.md should suffice as documentation.
+src/CasualtyVitals
+refs
+assets
+
+# Other boilerplate files
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+target/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE / Editor folders
+.vscode/
+.idea/
+.agents
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Settings created by the program
+settings.json
+profile_logs/
+
+# Temporary build files/installation media
+*.iss
+*.zip
+
+# Etc.
+*.ps1
+*.py
