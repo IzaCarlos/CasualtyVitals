@@ -33,7 +33,18 @@ if (CasualtyVitalsApi.IsAvailable &&
 }
 ```
 
-`CasualtyVitalsApi.ApiVersion` is currently `"1.1"`.
+`CasualtyVitalsApi.ApiVersion` is currently `"1.3"`.
+
+## Contract at a Glance
+
+- All IDs are case-sensitive. Adding the same ID again replaces that entry.
+- Public timed-entry and registration calls fail soft: a null body, empty ID,
+  null callback, or non-positive duration is ignored rather than throwing.
+- All API calls, providers, and modifiers must run on Unity's main thread. The
+  API collections are not thread-safe.
+- The API controls monitor presentation only. It does not write heart rate,
+  oxygen, pressure, consciousness, damage, inventory, or multiplayer state.
+- Readouts are game-derived monitor estimates, not a medical simulation contract.
 
 ## Readable Data
 
@@ -56,7 +67,15 @@ Fields:
 - `ElectricalStateHint`
 - `HyperkalemiaBurden`
 - `HypercalcemiaBurden`
+- `RadiationPercent`
+- `RadiationDoseGy`
+- `RadiationBurden`
+- `RadiationSourceBurden`
 - `WaterExposure`
+- `SepsisBurden`
+- `SystemicIllnessBurden`
+- `OpiateReception` (signed; negative means withdrawal/craving)
+- `VenomBurden`
 
 You can also subscribe to updates:
 
@@ -83,19 +102,11 @@ For simple timed effects, call `AddConditionBurden`.
 CasualtyVitalsApi.AddConditionBurden(body, "my_mod_toxin", 0.65f, 20f);
 ```
 
-The burden is clamped `0..1` and fades over `duration` seconds. Current built-in
-condition IDs read by the engine are:
-
-- `Angina`
-- `Hypoxia`
-- `Shock`
-- `Respiratory Failure`
-- `Ventricular Instability`
-- `Hyperkalemia`
-- `Hypercalcemia`
-
-This is best for "make the monitor/condition engine care about my temporary
-effect" without directly setting vitals.
+The burden is clamped `0..1` and fades over `duration` seconds. Its ID is only
+your ownership key; it does not select a built-in diagnosis. Each active timed
+burden contributes a fading ventricular/ectopic monitor drive, without writing
+vanilla `Body` fields. Use a condition provider when you need respiratory,
+hypoxia, noise, or capnography contributions as well.
 
 ## Condition Providers
 
@@ -116,10 +127,11 @@ CasualtyVitalsApi.AddConditionProvider("my_mod_radiation", body =>
 });
 ```
 
-Fields are additive burdens clamped `0..1`; Casualty Vitals uses the maximum
-contribution across providers each frame. `EtCO2Offset` is signed in mmHg-like
-monitor units and is summed/clamped; `EtCO2ObstructionBlend` and
-`EtCO2WaterlogNoise` are max-blended.
+`VentricularBurden`, `RespBurden`, `HypoxiaBurden`, `BaselineNoise`,
+`EtCO2ObstructionBlend`, and `EtCO2WaterlogNoise` accept `0..1` and are
+max-blended across providers. `EtCO2Offset` is signed in mmHg-like monitor units
+and is summed, then clamped to `-80..80`. Providers run during a monitor update:
+keep them fast, allocation-light, and non-blocking.
 
 Remove when your mod unloads or no longer needs the hook:
 
@@ -127,12 +139,14 @@ Remove when your mod unloads or no longer needs the hook:
 CasualtyVitalsApi.RemoveConditionProvider("my_mod_radiation");
 ```
 
-Provider exceptions are caught and the provider is silenced for a short cooldown.
+Provider exceptions are caught, logged, and silence that provider for five
+seconds. Registration changes made while a provider is running take effect on a
+later monitor update.
 
 ## Waveform Modifiers
 
-Waveform modifiers can adjust `SignalParameters` immediately before waveform
-generation:
+Waveform modifiers can adjust `SignalParameters` once per monitor update,
+immediately before waveform generation:
 
 ```csharp
 public sealed class TremorArtifact : IWaveformModifier
@@ -165,8 +179,12 @@ Useful `SignalParameters` groups:
 - EtCO2: `EtCO2Value`, `EtCO2Scale`, `EtCO2Height`,
   `EtCO2ObstructionBlend`, `EtCO2WaterlogNoise`.
 
-Waveform modifiers should be lightweight and deterministic per frame where
-possible.
+Most blend/amplitude fields expect `0..1`; `EffectiveHR` expects `0..360`,
+`QrsDominantPolarity` expects `-1..1`, and `StOffset` is signed. Modifiers are
+not automatically clamped, so provide finite values and clamp your own output.
+`NaN`, infinity, and contradictory rhythm states are unsupported and can make a
+trace malformed. Modifier exceptions are caught, logged, and silence that ID for
+five seconds.
 
 ## Transient Artifacts
 
@@ -176,7 +194,26 @@ For a short visual disturbance:
 CasualtyVitalsApi.AddTransientArtifact(body, "my_mod_electrical_noise", 0.8f, 3f);
 ```
 
-This is intended for monitor artifacts rather than long-running physiology.
+This is intended for monitor artifacts rather than long-running physiology. The
+strength is clamped `0..1`; reuse the same ID to replace the prior artifact.
+
+## Debug Helpers
+
+Debug tooling can manipulate Casualty Vitals-only condition fields without
+directly reaching into tracker internals:
+
+```csharp
+CasualtyVitalsApi.TrySetDebugConditionField(body, "hyperkalemiaBurden", 0.5f);
+CasualtyVitalsApi.ResetDebugState(body);
+```
+
+Radiation helpers use the game's percentage scale, where `100` means roughly
+`30 Gy`:
+
+```csharp
+CasualtyVitalsApi.SetDebugRadiationPercent(body, "my_debug_ui", 60f, 0.35f);
+CasualtyVitalsApi.SetDebugRadiationDose(body, "my_debug_ui", 12f, 0.35f);
+```
 
 ## EtCO2 Modifiers
 
@@ -202,18 +239,23 @@ Parameters:
 - `waterlogNoise`: `0..1` noisy wet plateau.
 - `duration`: seconds before the modifier fades out.
 
+Per-entry `offset` is clamped to `-60..60`, and `scaleMultiplier` to `0..2.5`.
+The ID is case-sensitive and replaces an existing entry with that ID.
+
 Use this for airway obstruction, ventilation changes, procedural artifacts,
 chemical exposure, or external CPR/ventilation mods.
 
-## What The API Does Not Do
+## Limits and Failure Behavior
 
-The public API does not directly set `Body.heartRate`, blood pressure, oxygen,
-or other vanilla fields. Mods can still edit vanilla fields themselves, but
-Casualty Vitals only promises compatibility for its public read/add/modify API.
+`OnVitalsUpdated` subscriber exceptions are caught so they cannot crash the
+monitor; a throwing subscriber remains subscribed. The API does not guarantee a
+fixed UI layout or compatibility with mods that replace the game's monitor
+components outright.
 
-EtCO2 can be modified through condition provider fields, waveform modifiers, or
-`AddEtCO2Modifier`. Direct vanilla `Body` field mutation is still outside the
-Casualty Vitals compatibility contract.
+EtCO2 can be modified through condition providers, waveform modifiers, or
+`AddEtCO2Modifier`. Mods may edit vanilla `Body` fields themselves, but that is
+outside the Casualty Vitals compatibility contract. Keep gameplay-affecting
+writes host-authoritative in multiplayer.
 
 ## Multiplayer Notes
 

@@ -1,10 +1,12 @@
-# If you need source for mod development then contact me in discord (_izacarlos), otherwise API.md should suffice as documentation.
-src/CasualtyVitals
+# Source code
+src/
+build.py
+assets/
 refs
-assets
-README.md
 TESTING.md
 NEXUS.md
+CHANGELOG.md
+# Sorry it's internal.
 
 # Other boilerplate files
 
@@ -80,4 +82,3 @@ profile_logs/
 
 # Etc.
 *.ps1
-*.py
