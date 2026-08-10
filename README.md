@@ -34,7 +34,7 @@ BepInEx dependency:
 ```
 
 Check `CasualtyVitalsApi.IsAvailable` before using live data. The currently
-documented API version is `1.3`.
+documented API version is `1.4`.
 
 ## Compatibility contract
 

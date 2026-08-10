@@ -33,13 +33,16 @@ if (CasualtyVitalsApi.IsAvailable &&
 }
 ```
 
-`CasualtyVitalsApi.ApiVersion` is currently `"1.3"`.
+`CasualtyVitalsApi.ApiVersion` is currently `"1.4"`.
 
 ## Contract at a Glance
 
 - All IDs are case-sensitive. Adding the same ID again replaces that entry.
 - Public timed-entry and registration calls fail soft: a null body, empty ID,
   null callback, or non-positive duration is ignored rather than throwing.
+- Numeric inputs are required to be finite. Non-finite burdens and signal fields
+  are replaced with safe defaults; extreme finite values are clamped to the
+  documented ranges. Timed durations are capped at one hour.
 - All API calls, providers, and modifiers must run on Unity's main thread. The
   API collections are not thread-safe.
 - The API controls monitor presentation only. It does not write heart rate,
@@ -179,12 +182,14 @@ Useful `SignalParameters` groups:
 - EtCO2: `EtCO2Value`, `EtCO2Scale`, `EtCO2Height`,
   `EtCO2ObstructionBlend`, `EtCO2WaterlogNoise`.
 
-Most blend/amplitude fields expect `0..1`; `EffectiveHR` expects `0..360`,
-`QrsDominantPolarity` expects `-1..1`, and `StOffset` is signed. Modifiers are
-not automatically clamped, so provide finite values and clamp your own output.
-`NaN`, infinity, and contradictory rhythm states are unsupported and can make a
-trace malformed. Modifier exceptions are caught, logged, and silence that ID for
-five seconds.
+Most blend fields expect `0..1`; `EffectiveHR` accepts `0..360`,
+`QrsDominantPolarity` accepts `-1..1`, and `StOffset` accepts `-1..1`.
+Casualty Vitals sanitizes the complete parameter set after each modifier, so
+`NaN`, infinity, and extreme values cannot poison the waveform or later frames.
+Do not rely on that as normal control flow: modifiers should still return finite,
+internally consistent values. A later modifier may replace an earlier modifier's
+choice. Modifier exceptions are caught, logged, and silence that ID for five
+seconds.
 
 ## Transient Artifacts
 
