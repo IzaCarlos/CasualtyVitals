@@ -169,10 +169,11 @@ This guide details all items, monitor waveforms, and condition treatments in **C
   - Paces ventricular contractions firmly at $74\text{ bpm}$ with blood pressure support ($92+\text{ mmHg}$).
   - **AV Block Progressive Healing**: Over the course of 1 battery charge, the therapeutic electrical stimulation progressively steps down AV blocks ($\text{3rd Degree} \to \text{Mobitz II} \to \text{Wenckebach} \to \text{1st Degree} \to \text{Normal Sinus Rhythm}$), fully curing the conduction system by **10% battery charge remaining** (36s of reserve battery to spare!).
 - **TACTICAL HAZARDS & WARNINGS**:
-  - > [!WARNING]
-  - > **Chest Slot / Armor Incompatibility**: The device occupies the chest equipment slot (`UpTorso`), meaning heavy ballistic vests and plate carriers **cannot be worn** while the pacemaker is active.
-  - > [!CAUTION]
-  - > **Rate-Fixation & Exertion Hazards (Thornback Encounters / Combat)**: Because ventricular pacing is fixed at $74\text{ bpm}$, cardiac output cannot accelerate to meet extreme oxygen demands. Heavy physical exertion (such as sprinting, fleeing from Thornbacks, or intense combat) causes severe stamina exhaustion and **rapidly drains consciousness**, causing **vision narrowing, darkening, and blurring**. Stop running immediately to rest and regain consciousness before passing out completely.
+> [!WARNING]
+> **Chest Slot / Armor Incompatibility**: The device occupies the chest equipment slot (`UpTorso`), meaning heavy ballistic vests and plate carriers **cannot be worn** while the pacemaker is active.
+
+> [!CAUTION]
+> **Rate-Fixation & Exertion Hazards (Thornback Encounters / Combat)**: Because ventricular pacing is fixed at $74\text{ bpm}$, cardiac output cannot accelerate to meet extreme oxygen demands. Heavy physical exertion (such as sprinting, fleeing from Thornbacks, or intense combat) causes severe stamina exhaustion and **rapidly drains consciousness**, causing **vision narrowing, darkening, and blurring**. Stop running immediately to rest and regain consciousness before passing out completely.
 
 ---
 
