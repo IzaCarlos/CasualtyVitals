@@ -1,14 +1,25 @@
-# Casualty Vitals Developer API
+# Casualty Vitals Developer API (v2.0)
 
-Casualty Vitals exposes a small public API for other BepInEx mods through the
-`CasualtyVitals` namespace. The API is designed for cooperative mods: read the
-monitor state, add temporary burdens/artifacts, or modify the rendered waveform
-without directly fighting vanilla `Body` fields.
+Casualty Vitals exposes a comprehensive public API for external BepInEx mods through the `CasualtyVitals` namespace. The API is designed for cooperative modding: read vitals and electrophysiology state, dictate minimum simulation mode tiers, drive causal physiology, register custom rhythm/conduction ailments, inject waveform artifacts, trigger pharmacological responses, or listen to clinical events without fighting vanilla `Body` fields.
 
-## Referencing
+---
 
-Reference `CasualtyVitals.dll` from your mod project if you want compile-time
-types:
+## Table of Contents
+1. [Referencing & Setup](#1-referencing--setup)
+2. [Simulation Mode Detection & Requirements](#2-simulation-mode-detection--requirements)
+3. [Reading Vitals, Snapshots & Hemodynamics](#3-reading-vitals-snapshots--hemodynamics)
+4. [Subscribing to Clinical Events](#4-subscribing-to-clinical-events)
+5. [Controlling Electrophysiology & Rhythm State](#5-controlling-electrophysiology--rhythm-state)
+6. [Electrolytes, Blood Gases & Metabolic Interventions](#6-electrolytes-blood-gases--metabolic-interventions)
+7. [Interacting with & Overriding Custom Items](#7-interacting-with--overriding-custom-items)
+8. [Continuous Physiology & Waveform Modifiers](#8-continuous-physiology--waveform-modifiers)
+9. [Error Handling, Null Safety & Isolation Guarantees](#9-error-handling-null-safety--isolation-guarantees)
+
+---
+
+## 1. Referencing & Setup
+
+Reference `CasualtyVitals.dll` from your mod project:
 
 ```xml
 <Reference Include="CasualtyVitals">
@@ -17,253 +28,289 @@ types:
 </Reference>
 ```
 
-Add a soft or hard dependency depending on whether your mod can run without it:
+Add a dependency attribute to your `BaseUnityPlugin`:
 
 ```csharp
 [BepInDependency("CasualtyVitals", BepInDependency.DependencyFlags.SoftDependency)]
 ```
 
-Check availability before using live data:
+Check API availability before invoking queries:
 
 ```csharp
-if (CasualtyVitalsApi.IsAvailable &&
-    CasualtyVitalsApi.TryGetVitals(body, out VitalsSnapshot v))
+if (CasualtyVitalsApi.IsAvailable && CasualtyVitalsApi.TryGetVitals(body, out VitalsSnapshot v))
 {
-    Logger.LogInfo($"HR {v.HR:0}, SpO2 {v.SpO2:0}, EtCO2 {v.EtCO2:0}");
+    Logger.LogInfo($"Rhythm: {v.Rhythm}, HR: {v.HR:0}, BP: {v.BPSys:0}/{v.BPDia:0}, SpO2: {v.SpO2:0}%, K+: {v.Potassium:0.0} mmol/L");
 }
 ```
 
-`CasualtyVitalsApi.ApiVersion` is currently `"1.4"`.
+`CasualtyVitalsApi.ApiVersion` is `"2.0"`.
 
-## Contract at a Glance
+---
 
-- All IDs are case-sensitive. Adding the same ID again replaces that entry.
-- Public timed-entry and registration calls fail soft: a null body, empty ID,
-  null callback, or non-positive duration is ignored rather than throwing.
-- Numeric inputs are required to be finite. Non-finite burdens and signal fields
-  are replaced with safe defaults; extreme finite values are clamped to the
-  documented ranges. Timed durations are capped at one hour.
-- All API calls, providers, and modifiers must run on Unity's main thread. The
-  API collections are not thread-safe.
-- The API controls monitor presentation only. It does not write heart rate,
-  oxygen, pressure, consciousness, damage, inventory, or multiplayer state.
-- Readouts are game-derived monitor estimates, not a medical simulation contract.
+## 2. Simulation Mode Detection & Requirements
 
-## Readable Data
+CasualtyVitals supports 4 simulation complexity tiers:
+- **`SimulationMode.ECG` (Tier 0)**: Monitor visuals and lead projections only (no extra burden calculations).
+- **`SimulationMode.Simple` (Tier 1)**: Heuristic burden calculations with hyperkalemia and hypercalcemia.
+- **`SimulationMode.Custom` (Tier 2)**: Player-selected feature flags.
+- **`SimulationMode.Advanced` (Tier 3)**: Full causal electrophysiology state machine, acid-base metabolism, and blood gas calculations.
 
-`VitalsSnapshot` is the main read-only view. It is published once per monitor
-update and can be queried by `Body`.
+### Detecting Active Mode
+```csharp
+SimulationMode activeMode = CasualtyVitalsApi.CurrentSimulationMode;
+// Or:
+SimulationMode mode = CasualtyVitalsApi.GetSimulationMode();
+```
 
-Fields:
-
-- `HR`
-- `SpO2`
-- `RR`
-- `BPSys`
-- `BPDia`
-- `EtCO2`
-- `HeartProg`
-- `FibrillationProgress`
-- `VFibChaos`
-- `AsystoleDecay`
-- `MechanicalPerfusion`
-- `ElectricalStateHint`
-- `HyperkalemiaBurden`
-- `HypercalcemiaBurden`
-- `RadiationPercent`
-- `RadiationDoseGy`
-- `RadiationBurden`
-- `RadiationSourceBurden`
-- `WaterExposure`
-- `SepsisBurden`
-- `SystemicIllnessBurden`
-- `OpiateReception` (signed; negative means withdrawal/craving)
-- `VenomBurden`
-
-You can also subscribe to updates:
+### Requiring / Forcing a Minimum Simulation Mode
+If your mod requires Advanced causal physiology (e.g. potassium shifts, blood gases, or AV block state machines), declare your requirement programmatically. If multiple mods declare requirements, CasualtyVitals automatically resolves to the highest tier:
 
 ```csharp
-CasualtyVitalsApi.OnVitalsUpdated += OnVitalsUpdated;
+// Require Advanced mode with caller ID and reason
+CasualtyVitalsApi.RequireSimulationMode(
+    modId: "com.author.toxicology", 
+    requiredMode: SimulationMode.Advanced, 
+    reason: "Requires causal potassium and arterial blood gas calculations");
 
-private void OnVitalsUpdated(Body body, VitalsSnapshot v)
+// When done or if your feature unloads:
+CasualtyVitalsApi.ReleaseSimulationModeRequirement("com.author.toxicology");
+
+// Inspect all active mod requirements:
+IReadOnlyList<CasualtyVitalsApi.SimulationModeRequirement> requirements = CasualtyVitalsApi.GetActiveModeRequirements();
+foreach (var req in requirements)
 {
-    if (v.ElectricalStateHint == "VTach")
+    Debug.Log($"Mod '{req.ModId}' required '{req.RequiredMode}': {req.Reason}");
+}
+```
+
+---
+
+## 3. Reading Vitals, Snapshots & Hemodynamics
+
+### Querying Immutable Snapshots
+`VitalsSnapshot` gives an immutable, thread-safe view of a patient's vitals, blood gases, electrolytes, and electrophysiology:
+
+```csharp
+if (CasualtyVitalsApi.TryGetVitals(body, out VitalsSnapshot snap))
+{
+    // Hemodynamics & Perfusion
+    float hr = snap.HR;
+    float sys = snap.BPSys;
+    float dia = snap.BPDia;
+    bool hasPulse = snap.PulsePresent;
+    float cardiacOutput = snap.CardiacOutput; // 0..1
+
+    // Respiratory & Blood Gas
+    float rr = snap.RR;
+    float spo2 = snap.SpO2;
+    float etco2 = snap.EtCO2;
+    float paO2 = snap.PaO2;
+    float paCO2 = snap.PaCO2;
+    float acidosis = snap.Acidosis; // 0..1
+    RespiratoryPattern pattern = snap.RespPattern;
+
+    // Electrophysiology
+    EcgRhythm rhythm = snap.Rhythm;
+    EcgLead lead = snap.ActiveLead;
+    IReadOnlyCollection<EcgAilment> ailments = snap.ActiveAilments;
+
+    // Electrolytes
+    float k = snap.Potassium;  // e.g. 4.2 mmol/L
+    float ca = snap.Calcium;   // e.g. 9.5 mg/dL
+}
+```
+
+### Direct Hemodynamic Helpers
+```csharp
+// Get live blood pressure (systolic and diastolic)
+CasualtyVitalsApi.GetBloodPressure(body, out float sys, out float dia);
+
+// Calculate Mean Arterial Pressure (MAP) and Pulse Pressure
+float map = CasualtyVitalsApi.GetMeanArterialPressure(body); // (Sys + 2*Dia) / 3
+float pp = CasualtyVitalsApi.GetPulsePressure(body);         // Sys - Dia
+
+// Check if a specific limb has active arterial tourniquet occlusion
+bool isOccluded = CasualtyVitalsApi.IsLimbOccluded(body, limbIndex: 2);
+```
+
+---
+
+## 4. Subscribing to Clinical Events
+
+All event callbacks are isolated with individual exception handling to prevent external errors from disrupting the game loop:
+
+```csharp
+// Electrophysiological rhythm transitions (e.g. Sinus -> VTach -> VFib)
+CasualtyVitalsApi.OnRhythmChanged += (body, oldRhythm, newRhythm) =>
+{
+    Debug.Log($"Rhythm transition on {body.name}: {oldRhythm} -> {newRhythm}");
+};
+
+// Conduction defects or ailments added/removed
+CasualtyVitalsApi.OnAilmentAdded += (body, ailment) =>
+{
+    Debug.Log($"Patient developed ECG defect: {ailment}");
+};
+
+CasualtyVitalsApi.OnAilmentRemoved += (body, ailment) =>
+{
+    Debug.Log($"ECG defect resolved: {ailment}");
+};
+
+// Cardiac arrest (VFib or Asystole) detection
+CasualtyVitalsApi.OnCardiacArrest += body =>
+{
+    Debug.LogWarning($"Cardiac arrest on body {body.name}!");
+};
+
+// Pulseless Electrical Activity (PEA) decoupling
+CasualtyVitalsApi.OnPEA += body =>
+{
+    Debug.LogWarning($"PEA detected on body {body.name} (electrical activity without mechanical output)!");
+};
+
+// Defibrillator shock delivered
+CasualtyVitalsApi.OnDefibrillationDelivered += (body, energyScale) =>
+{
+    Debug.Log($"Transthoracic shock delivered to {body.name} (scale {energyScale:0.0})");
+};
+
+// Per-frame vitals tick
+CasualtyVitalsApi.OnVitalsUpdated += (body, snap) =>
+{
+    if (snap.Potassium > 7.0f && snap.Rhythm != EcgRhythm.VFib)
     {
-        // React without touching the monitor internals.
+        // React to severe hyperkalemia
+    }
+};
+```
+
+---
+
+## 5. Controlling Electrophysiology & Rhythm State
+
+### Setting Rhythms with Lock Duration
+```csharp
+// Command a rhythm (e.g. SVT, VFib, Third-Degree AV Block) with a lock duration in seconds
+CasualtyVitalsApi.TrySetRhythm(body, EcgRhythm.SVT, lockDuration: 15f);
+
+// Induce acute myocardial infarction / heart attack in a specific coronary territory
+CasualtyVitalsApi.TryTriggerHeartAttack(body, IschemiaTerritory.Anterior, severity: 0.90f);
+```
+
+### Adding / Removing Conduction Ailments
+Ailments automatically respect mutual-exclusion rules:
+```csharp
+// Inject ectopy or STEMI pattern
+CasualtyVitalsApi.TryAddAilment(body, EcgAilment.Bigeminy);
+CasualtyVitalsApi.TryAddAilment(body, EcgAilment.AnteriorSTEMI);
+
+// Clear an ailment
+CasualtyVitalsApi.TryRemoveAilment(body, EcgAilment.Bigeminy);
+```
+
+---
+
+## 6. Electrolytes, Blood Gases & Metabolic Interventions
+
+### Modifying Electrolytes & Blood Chemistry
+```csharp
+// Adjust blood potassium (mmol/L) and calcium (mg/dL)
+CasualtyVitalsApi.TrySetElectrolytes(body, potassium: 6.8f, calcium: 11.2f);
+
+// Administer an insulin dose (drives intracellular potassium shift: -0.35 mmol/L)
+CasualtyVitalsApi.ApplyInsulinDose(body, units: 1.0f);
+
+// Drive arterial blood gas (PaO2, PaCO2, and metabolic acidosis 0..1)
+CasualtyVitalsApi.TrySetBloodGas(body, paO2: 140f, paCO2: 32f, acidosis: 0.15f);
+
+// Set respiratory pattern (Eupnea, Kussmaul, Cheyne-Stokes, Apnea)
+CasualtyVitalsApi.TrySetRespiratoryPattern(body, RespiratoryPattern.Kussmaul);
+```
+
+### Vascular Resistance & Drug Loads
+```csharp
+// Apply systemic vascular resistance multiplier (e.g. powerful vasoconstrictor / pressor)
+CasualtyVitalsApi.SetVascularResistanceMultiplier(body, id: "my_pressor", multiplier: 1.45f, duration: 45f);
+
+// Track custom drug load levels (arbitrary unit accumulation)
+CasualtyVitalsApi.AddDrugLoad(body, "my_custom_toxin", amount: 15.0f);
+float currentLoad = CasualtyVitalsApi.GetDrugLoad(body, "my_custom_toxin");
+```
+
+---
+
+## 7. Interacting with & Overriding Custom Items
+
+### Programmatic Treatment Triggers
+You can notify CasualtyVitals of medical procedures performed by your mod:
+```csharp
+// Deliver a manual or AED defibrillation shock (1.0f = full energy)
+CasualtyVitalsApi.NotifyDefibrillation(body, strength: 1.0f);
+
+// Apply transcutaneous external cardiac pacing spikes
+CasualtyVitalsApi.NotifyTranscutaneousPacing(body, rateBpm: 75f, currentMa: 60f);
+
+// Apply manual or mechanical CPR chest compressions (supports perfusion and PEA drive)
+CasualtyVitalsApi.NotifyChestCompressions(body, depthFactor: 1.0f);
+```
+
+### Overriding Item Treatment Logic
+To override how an item behaves upon application, use `CustomMedicalItems` or hook the treatment pipeline:
+```csharp
+// Check if an item is a custom CV item
+if (item.id == "cv_epinephrine")
+{
+    // Epinephrine auto-injector detected
+}
+```
+
+---
+
+## 8. Continuous Physiology & Waveform Modifiers
+
+### Continuous Biological Modifiers (`IPhysiologyModifier`)
+For continuous processes (e.g. venom absorption, hypothermia, sepsis, or custom drug kinetics):
+
+```csharp
+public class SevereHypothermiaModifier : IPhysiologyModifier
+{
+    public void ModifyPhysiology(Body body, PatientSimulationState state, float dt)
+    {
+        if (body.temperature < 30f)
+        {
+            // Severe hypothermia drives metabolic acidosis and prolongs QT
+            state.Acidosis = Mathf.MoveTowards(state.Acidosis, 0.75f, dt * 0.02f);
+            state.AddAilment(EcgAilment.LongQT);
+        }
     }
 }
+
+// Register on mod Awake
+CasualtyVitalsApi.AddPhysiologyModifier("hypothermia_mod", new SevereHypothermiaModifier());
+
+// Remove on teardown
+CasualtyVitalsApi.RemovePhysiologyModifier("hypothermia_mod");
 ```
 
-Subscriber exceptions are caught by Casualty Vitals so one bad listener should
-not crash the monitor.
-
-## Add Condition Burdens
-
-For simple timed effects, call `AddConditionBurden`.
-
+### Synthetic Waveform & Noise Modifiers (`IWaveformModifier`)
 ```csharp
-CasualtyVitalsApi.AddConditionBurden(body, "my_mod_toxin", 0.65f, 20f);
-```
-
-The burden is clamped `0..1` and fades over `duration` seconds. Its ID is only
-your ownership key; it does not select a built-in diagnosis. Each active timed
-burden contributes a fading ventricular/ectopic monitor drive, without writing
-vanilla `Body` fields. Use a condition provider when you need respiratory,
-hypoxia, noise, or capnography contributions as well.
-
-## Condition Providers
-
-For continuous effects, register a provider:
-
-```csharp
-CasualtyVitalsApi.AddConditionProvider("my_mod_radiation", body =>
-{
-    return new ExternalConditionSignal
-    {
-        VentricularBurden = 0.25f,
-        RespBurden = 0.10f,
-        HypoxiaBurden = 0.20f,
-        BaselineNoise = 0.35f,
-        EtCO2Offset = 8f,
-        EtCO2ObstructionBlend = 0.4f,
-    };
-});
-```
-
-`VentricularBurden`, `RespBurden`, `HypoxiaBurden`, `BaselineNoise`,
-`EtCO2ObstructionBlend`, and `EtCO2WaterlogNoise` accept `0..1` and are
-max-blended across providers. `EtCO2Offset` is signed in mmHg-like monitor units
-and is summed, then clamped to `-80..80`. Providers run during a monitor update:
-keep them fast, allocation-light, and non-blocking.
-
-Remove when your mod unloads or no longer needs the hook:
-
-```csharp
-CasualtyVitalsApi.RemoveConditionProvider("my_mod_radiation");
-```
-
-Provider exceptions are caught, logged, and silence that provider for five
-seconds. Registration changes made while a provider is running take effect on a
-later monitor update.
-
-## Waveform Modifiers
-
-Waveform modifiers can adjust `SignalParameters` once per monitor update,
-immediately before waveform generation:
-
-```csharp
-public sealed class TremorArtifact : IWaveformModifier
+public class NeuroStimulatorArtifactModifier : IWaveformModifier
 {
     public void ModifySignal(ref SignalParameters p)
     {
-        p.BaselineNoise = Mathf.Max(p.BaselineNoise, 0.45f);
-        p.BaselineWander = Mathf.Max(p.BaselineWander, 0.25f);
+        // Inject high-frequency baseline jitter
+        p.BaselineNoise += 0.08f;
     }
 }
 
-CasualtyVitalsApi.AddWaveformModifier("my_mod_tremor", new TremorArtifact());
+CasualtyVitalsApi.AddWaveformModifier("neuro_stim", new NeuroStimulatorArtifactModifier());
 ```
 
-Remove with:
+---
 
-```csharp
-CasualtyVitalsApi.RemoveWaveformModifier("my_mod_tremor");
-```
+## 9. Error Handling, Null Safety & Isolation Guarantees
 
-Useful `SignalParameters` groups:
-
-- Electrical: `EffectiveHR`, `QrsWidth`, `PWaveAmplitude`, `TWaveAmplitude`,
-  `TWavePeaking`, `StOffset`, `EctopicProbability`, `VFibChaos`,
-  `AsystoleDecay`, `BaselineNoise`, `BaselineWander`.
-- Mechanical/perfusion: `MechanicalPerfusion`, `PlethQuality`, `AbpSystolic`,
-  `AbpMorphologyType`, `AbpPerfusion`.
-- Respiratory: `RespDrive`, `RespRate`, `IsBreathing`, distress/apnea blends,
-  `RespAmplitude`.
-- EtCO2: `EtCO2Value`, `EtCO2Scale`, `EtCO2Height`,
-  `EtCO2ObstructionBlend`, `EtCO2WaterlogNoise`.
-
-Most blend fields expect `0..1`; `EffectiveHR` accepts `0..360`,
-`QrsDominantPolarity` accepts `-1..1`, and `StOffset` accepts `-1..1`.
-Casualty Vitals sanitizes the complete parameter set after each modifier, so
-`NaN`, infinity, and extreme values cannot poison the waveform or later frames.
-Do not rely on that as normal control flow: modifiers should still return finite,
-internally consistent values. A later modifier may replace an earlier modifier's
-choice. Modifier exceptions are caught, logged, and silence that ID for five
-seconds.
-
-## Transient Artifacts
-
-For a short visual disturbance:
-
-```csharp
-CasualtyVitalsApi.AddTransientArtifact(body, "my_mod_electrical_noise", 0.8f, 3f);
-```
-
-This is intended for monitor artifacts rather than long-running physiology. The
-strength is clamped `0..1`; reuse the same ID to replace the prior artifact.
-
-## Debug Helpers
-
-Debug tooling can manipulate Casualty Vitals-only condition fields without
-directly reaching into tracker internals:
-
-```csharp
-CasualtyVitalsApi.TrySetDebugConditionField(body, "hyperkalemiaBurden", 0.5f);
-CasualtyVitalsApi.ResetDebugState(body);
-```
-
-Radiation helpers use the game's percentage scale, where `100` means roughly
-`30 Gy`:
-
-```csharp
-CasualtyVitalsApi.SetDebugRadiationPercent(body, "my_debug_ui", 60f, 0.35f);
-CasualtyVitalsApi.SetDebugRadiationDose(body, "my_debug_ui", 12f, 0.35f);
-```
-
-## EtCO2 Modifiers
-
-For a timed EtCO2-specific effect:
-
-```csharp
-CasualtyVitalsApi.AddEtCO2Modifier(
-    body,
-    "my_mod_airway_obstruction",
-    offset: 12f,
-    scaleMultiplier: 1.15f,
-    obstructionBlend: 0.85f,
-    waterlogNoise: 0.0f,
-    duration: 18f);
-```
-
-Parameters:
-
-- `offset`: signed mmHg-like value added to EtCO2.
-- `scaleMultiplier`: `1` is neutral, `0` flattens the capnogram, values above
-  `1` amplify it.
-- `obstructionBlend`: `0..1` shark-fin/slurred upstroke and rising plateau.
-- `waterlogNoise`: `0..1` noisy wet plateau.
-- `duration`: seconds before the modifier fades out.
-
-Per-entry `offset` is clamped to `-60..60`, and `scaleMultiplier` to `0..2.5`.
-The ID is case-sensitive and replaces an existing entry with that ID.
-
-Use this for airway obstruction, ventilation changes, procedural artifacts,
-chemical exposure, or external CPR/ventilation mods.
-
-## Limits and Failure Behavior
-
-`OnVitalsUpdated` subscriber exceptions are caught so they cannot crash the
-monitor; a throwing subscriber remains subscribed. The API does not guarantee a
-fixed UI layout or compatibility with mods that replace the game's monitor
-components outright.
-
-EtCO2 can be modified through condition providers, waveform modifiers, or
-`AddEtCO2Modifier`. Mods may edit vanilla `Body` fields themselves, but that is
-outside the Casualty Vitals compatibility contract. Keep gameplay-affecting
-writes host-authoritative in multiplayer.
-
-## Multiplayer Notes
-
-Gameplay-affecting changes should generally be driven by the host. Reading
-snapshots and drawing client-only UI is safer than writing vanilla `Body` fields
-from every client.
+1. **Defensive Numeric Clamping**: All inputs to `CasualtyVitalsApi` pass through `NumericSafety`. Non-finite values (`float.NaN`, `float.PositiveInfinity`) are safely replaced with default resting values without throwing `ArithmeticException`.
+2. **Provider Auto-Silencing**: If an external `IPhysiologyModifier` or `IWaveformModifier` throws an unhandled exception, it is caught, logged with the provider ID, and silenced for a cooldown period to protect frame rates and prevent game crashes.
+3. **Graceful Mode Fallback**: If a mod requests an advanced feature while the user has configured `SimulationMode.ECG` without a forced requirement, the call safely succeeds with no-op or fallback heuristics.

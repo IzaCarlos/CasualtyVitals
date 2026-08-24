@@ -8,6 +8,8 @@ NEXUS.md
 CHANGELOG.md
 # Sorry it's internal.
 tools/
+tests/
+*.bbcode
 
 # Other boilerplate files
 
@@ -83,3 +85,4 @@ profile_logs/
 
 # Etc.
 *.ps1
+.vscodecounter
