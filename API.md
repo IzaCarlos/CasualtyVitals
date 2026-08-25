@@ -83,6 +83,15 @@ foreach (var req in requirements)
 }
 ```
 
+### Inspecting Active Custom Mode Toggles
+When running in `SimulationMode.Custom`, query which specific modular subsystems are enabled:
+```csharp
+var toggles = CasualtyVitalsApi.GetActiveCustomToggles();
+bool hemoEnabled = toggles.Hemodynamics;
+bool electrolytesEnabled = toggles.Electrolytes;
+bool rhythmStateEnabled = toggles.RhythmStateMachine;
+```
+
 ---
 
 ## 3. Reading Vitals, Snapshots & Hemodynamics
@@ -120,7 +129,7 @@ if (CasualtyVitalsApi.TryGetVitals(body, out VitalsSnapshot snap))
 }
 ```
 
-### Direct Hemodynamic Helpers
+### Direct Hemodynamic & Dynamic Bleeding Helpers
 ```csharp
 // Get live blood pressure (systolic and diastolic)
 CasualtyVitalsApi.GetBloodPressure(body, out float sys, out float dia);
@@ -131,6 +140,11 @@ float pp = CasualtyVitalsApi.GetPulsePressure(body);         // Sys - Dia
 
 // Check if a specific limb has active arterial tourniquet occlusion
 bool isOccluded = CasualtyVitalsApi.IsLimbOccluded(body, limbIndex: 2);
+
+// Query dynamic hemodynamic bleeding factors and rates:
+float headMult = CasualtyVitalsApi.GetLimbBleedMultiplier(body.limbs[0]); // e.g. 1.058x
+float limbRate = CasualtyVitalsApi.GetLimbBleedRate(body.limbs[0]);        // points/sec
+float totalGrossRate = CasualtyVitalsApi.GetTotalBleedRate(body);          // points/sec
 ```
 
 ---

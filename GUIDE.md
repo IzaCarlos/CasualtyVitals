@@ -43,6 +43,11 @@ This guide details all items, monitor waveforms, and condition treatments in **C
   - [Managing Conduction Blocks (AV Blocks & Pacing)](#managing-conduction-blocks-av-blocks--pacing)
   - [Treating Severe Acidosis & Kussmaul Respiration](#treating-severe-acidosis--kussmaul-respiration)
   - [Recovering from Drug Overdoses](#recovering-from-drug-overdoses)
+- [6. Dynamic Hemodynamics & Bleeding Model](#6-dynamic-hemodynamics--bleeding-model)
+  - [1. Darcy-Weisbach Pressure Flow](#1-darcy-weisbach-pressure-flow)
+  - [2. Blood Volume Easing & Hypervolemia](#2-blood-volume-easing--hypervolemia)
+  - [3. Anatomical Vascular Caliber Matrix](#3-anatomical-vascular-caliber-matrix)
+  - [4. WoundView & HUD Integration](#4-woundview--hud-integration)
 
 ---
 
@@ -362,3 +367,42 @@ When starting a round on Advanced mode, characters have a realistic background c
 - **Albuterol Overdose ($6\text{--}10\text{ puffs}$)**: Severe tachycardia, tachypnea ($> 50\text{ breaths/min}$), and negative stamina drain. Buffer lactic acidosis with **Sodium Bicarbonate** and restore stamina with **Dextrose Chewables**.
 - **Adrenaline Overdose (Stacked Pens)**: Malignant hypertension ($> 200\text{ mmHg}$) and tachyarrhythmias. Rest and monitor until drug washout ($\approx 45\text{--}60\text{ seconds}$).
 - **Calcium Overdose**: Short QT intervals and myocardial irritability. Administer **Calcitonin Solution** to safely lower serum calcium.
+
+---
+
+## 6. Dynamic Hemodynamics & Bleeding Model
+
+When running in **Advanced** mode (or with **Hemodynamics** enabled in **Custom** mode), wound bleeding rates dynamically scale based on arterial blood pressure, circulating blood volume reserves, and localized vascular caliber.
+
+### 1. Darcy-Weisbach Pressure Flow
+Wound outflow scales with the square root of effective arterial perfusion pressure ($\sqrt{\text{BP} / 120}$):
+- **Hypertensive Crisis ($180\text{ mmHg}$)**: $\approx 1.22\times$ outflow acceleration.
+- **Normal Pressure ($120\text{ mmHg}$)**: $1.00\times$ baseline outflow.
+- **Decompensated Shock ($60\text{ mmHg}$)**: Outflow naturally slows to $\approx 0.71\times$.
+- **Asystole / Cardiac Arrest ($0\text{ mmHg}$)**: Outflow drops to $0.05\times$ (passive capillary ooze).
+- **AutoPump Support during Arrest**: Generates artificial mechanical perfusion ($\sim 55\text{ mmHg}$ / $\approx 0.68\times$), maintaining blood flow to the brain while sustaining bleeding until wounds are treated.
+
+### 2. Blood Volume Easing & Hypervolemia
+- Outflow scales relative to total circulating blood liters ($V_{\text{liters}} = 2.5\text{L} + \text{bloodVolume} \times 0.025\text{L}$):
+  - **$7.5\text{L}$ ($150\%$ IV Overload)**: $1.35\times$
+  - **$5.5\text{L}$ ($110\%$ Hypervolemic)**: $1.07\times$
+  - **$5.0\text{L}$ ($100\%$ Healthy Adult)**: $1.00\times$
+  - **$4.23\text{L}$ ($85\%$ Mild Volume Loss)**: $\approx 0.89\times$
+  - **$2.5\text{L}$ ($50\%$ Lethal Shock Threshold)**: $0.65\times$
+- This creates a natural physiological buffer window: as blood is lost, bleeding automatically decelerates, giving the player more time to apply tourniquets or bandages.
+
+### 3. Anatomical Vascular Caliber Matrix
+Each limb scales according to its major arterial caliber:
+- **Upper Torso (Aortic Arch / Chest)**: $1.20\times$
+- **Head (Common Carotid)**: $1.15\times$
+- **Lower Torso (Abdominal Aorta / Iliac)**: $1.15\times$
+- **Thighs (Femoral Artery)**: $1.15\times$
+- **Upper Arms (Brachial Artery)**: $1.00\times$ (baseline)
+- **Forearms & Calves (Radial & Tibial)**: $0.85\times$
+- **Paws & Feet**: $0.70\times$
+
+### 4. WoundView & HUD Integration
+- Hovering over or selecting any limb in the **WoundView** displays the real-time gross flow rate in $\text{L/m}$ on the limb card.
+- Droplet severity indicators on the paper doll dynamically shift color and tiers based on real-time hemodynamic flow.
+- The top-panel Total Bleed readout accurately reflects the sum of all active wound outflows.
+
