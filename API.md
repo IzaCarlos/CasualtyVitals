@@ -279,6 +279,13 @@ if (item.id == "cv_epinephrine")
 }
 ```
 
+### Opting Out of CV Custom Items
+If your mod is an overarching medical overhaul (e.g. a comprehensive pharmacology mod), you can prevent CasualtyVitals from dynamically registering its native medical items and loot pool injections (like Albuterol, Calcium Gluconate, Defibs):
+```csharp
+// Call this during your mod's initialization (Awake) to take complete ownership of medical items.
+CasualtyVitalsApi.PreventCustomItems();
+```
+
 ---
 
 ## 8. Continuous Physiology & Waveform Modifiers
@@ -323,7 +330,58 @@ CasualtyVitalsApi.AddWaveformModifier("neuro_stim", new NeuroStimulatorArtifactM
 
 ---
 
-## 9. Error Handling, Null Safety & Isolation Guarantees
+## 9. UI & Custom Waveform Trace Overrides
+
+If your mod introduces entirely new physiological signals (like an EEG or ICP monitor) and needs to hijack the UI display, you can provide an `ICustomTraceProvider`. This bypasses the normal ECG waveform generation, turns off the standard channel indicator on the monitor, and seamlessly draws your custom waveform buffer at 240Hz alongside your custom color and readouts.
+
+### Option A: Class-Based Provider (`ICustomTraceProvider`)
+```csharp
+public class MyEegProvider : ICustomTraceProvider
+{
+    public float GetSample(Body body, float dt, float time)
+    {
+        // Must return a normalized sample (0.0 - 1.0 centered at 0.5)
+        return 0.5f + Mathf.Sin(time * Mathf.PI * 20f) * 0.35f; 
+    }
+
+    public string GetNumericReadout(Body body)
+    {
+        // Rendered in the top right of the monitor alongside your custom color
+        return "EEG 10Hz"; 
+    }
+}
+
+// When you want to activate the override:
+CasualtyVitalsApi.SetCustomTraceOverride(body, "my_neuro_mod", "EEG", Color.magenta, new MyEegProvider());
+
+// Once the user is no longer focused:
+CasualtyVitalsApi.ClearCustomTraceOverride(body, "my_neuro_mod");
+```
+
+### Option B: Inline Lambda / Delegate Overload
+For simple signals, you don't even need to implement an interface:
+```csharp
+CasualtyVitalsApi.SetCustomTraceOverride(
+    body,
+    "my_quick_sine",
+    "SINE",
+    Color.cyan,
+    (body, dt, time) => 0.5f + Mathf.Sin(time * 6.28f) * 0.3f,
+    (body) => "1.0 Hz"
+);
+```
+
+### Checking Override Status
+```csharp
+if (CasualtyVitalsApi.IsCustomTraceActive(body))
+{
+    // A custom signal is currently driving the primary channel
+}
+```
+
+---
+
+## 10. Error Handling, Null Safety & Isolation Guarantees
 
 1. **Defensive Numeric Clamping**: All inputs to `CasualtyVitalsApi` pass through `NumericSafety`. Non-finite values (`float.NaN`, `float.PositiveInfinity`) are safely replaced with default resting values without throwing `ArithmeticException`.
 2. **Provider Auto-Silencing**: If an external `IPhysiologyModifier` or `IWaveformModifier` throws an unhandled exception, it is caught, logged with the provider ID, and silenced for a cooldown period to protect frame rates and prevent game crashes.

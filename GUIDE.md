@@ -223,6 +223,12 @@ The in-game vital monitor renders 5 distinct physiological channels:
 - **Shark-Fin Waveform**: Sloped expiratory phase indicating asthma, waterlogged airway, or bronchospasm. *Treat with Albuterol Inhaler.*
 - **Sudden Rise during CPR ($> 30\text{ mmHg}$)**: Indicates return of spontaneous cardiac circulation (ROSC).
 
+### 6. ECG Lead Controls & Autozoom
+By default, the active ECG channel uses a contextual hotkey system to prevent interference with Steam's F12 screenshot key. Upon pressing a group hotkey, a transparent chord-helper appears for 2.5s.
+- **Contextual Keys**: `F1` (Limb Leads: I, II, III), `F2` (Augmented: aVR, aVL, aVF), `F3` (Precordial: V1-V6).
+- **Medical Keys**: `F1` (Inferior Wall), `F2` (Lateral Wall), `F3` (Septal Wall), `F4` (Anterior Wall).
+- **Autozoom**: For inherently weak axes (like Lead III or aVL), the monitor dynamically scales the trace and briefly displays `x1.2` etc. in the corner to prevent waveform clipping.
+
 ---
 
 ## 3. Core Physiological Concepts: How to Read In-Game Tells
